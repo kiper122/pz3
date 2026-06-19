@@ -1,0 +1,211 @@
+# PIPELINE DEFINITION
+# Name: angular-api-health-pipeline
+# Description: MLOps Pipeline for monitoring Angular REST API health
+components:
+  comp-load-data:
+    executorLabel: exec-load-data
+    outputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-make-prediction:
+    executorLabel: exec-make-prediction
+    inputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-load-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - load_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'numpy==1.26.4'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef load_data(dataset: Output[Dataset]):\n    \"\"\"Step 1: Load\
+          \ Angular API metrics for 7 days.\"\"\"\n    import json\n    import numpy\
+          \ as np\n\n    data = {\n        'day':         [1, 2, 3, 4, 5, 6, 7],\n\
+          \        'requests':    [12, 18, 15, 22, 30, 28, 35],\n        'errors':\
+          \      [1, 0, 2, 0, 1, 3, 0],\n        'response_ms': [120, 115, 130, 110,\
+          \ 145, 200, 105],\n    }\n\n    with open(dataset.path, 'w') as f:\n   \
+          \     json.dump(data, f)\n\n    print(f'[load_data] Loaded: {len(data[\"\
+          day\"])} records')\n    print(f'[load_data] Requests: {data[\"requests\"\
+          ]}')\n\n"
+        image: python:3.11
+    exec-make-prediction:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - make_prediction
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'numpy==1.26.4'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef make_prediction(model: Input[Model]):\n    \"\"\"Step 3: Classify\
+          \ Angular REST API health status.\"\"\"\n    import json\n\n    with open(model.path)\
+          \ as f:\n        params = json.load(f)\n\n    status  = 'HEALTHY'\n    reasons\
+          \ = []\n\n    if params['avg_errors'] >= params['threshold_error']:\n  \
+          \      status = 'CRITICAL'\n        reasons.append(f'High error rate: {params[\"\
+          avg_errors\"]:.2f}/day')\n    if params['avg_response_ms'] >= params['threshold_slow']:\n\
+          \        status = 'WARNING' if status == 'HEALTHY' else status\n       \
+          \ reasons.append(f'Slow response: {params[\"avg_response_ms\"]:.0f} ms')\n\
+          \    if params['trend'] > 15:\n        status = 'WARNING' if status == 'HEALTHY'\
+          \ else status\n        reasons.append(f'Load growth: +{params[\"trend\"\
+          ]:.0f} req/week')\n    if not reasons:\n        reasons.append('All metrics\
+          \ are normal')\n\n    print(f'\\n{\"=\"*50}')\n    print(f'  Angular REST\
+          \ API Status: [ {status} ]')\n    for r in reasons:\n        print(f'  \
+          \  * {r}')\n    print(f'{\"=\"*50}\\n')\n\n"
+        image: python:3.11
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'numpy==1.26.4'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    dataset: Input[Dataset],\n    model:   Output[Model],\n\
+          \    metrics: Output[Metrics],\n):\n    \"\"\"Step 2: Compute model metrics\
+          \ from dataset.\"\"\"\n    import json\n    import numpy as np\n\n    with\
+          \ open(dataset.path) as f:\n        data = json.load(f)\n\n    requests\
+          \ = np.array(data['requests'])\n    errors   = np.array(data['errors'])\n\
+          \    resp     = np.array(data['response_ms'])\n\n    params = {\n      \
+          \  'avg_requests':    float(np.mean(requests)),\n        'avg_errors': \
+          \     float(np.mean(errors)),\n        'avg_response_ms': float(np.mean(resp)),\n\
+          \        'trend':           float(requests[-1] - requests[0]),\n       \
+          \ 'threshold_high':  float(np.mean(requests) * 1.2),\n        'threshold_error':\
+          \ 2.0,\n        'threshold_slow':  150.0,\n    }\n\n    with open(model.path,\
+          \ 'w') as f:\n        json.dump(params, f)\n\n    metrics.log_metric('avg_requests_per_day',\
+          \ params['avg_requests'])\n    metrics.log_metric('avg_errors_per_day',\
+          \   params['avg_errors'])\n    metrics.log_metric('avg_response_ms',   \
+          \   params['avg_response_ms'])\n    metrics.log_metric('load_trend',   \
+          \        params['trend'])\n\n    print(f'[train_model] avg_requests={params[\"\
+          avg_requests\"]:.2f}')\n    print(f'[train_model] avg_response={params[\"\
+          avg_response_ms\"]:.2f} ms')\n    print(f'[train_model] load_trend  =+{params[\"\
+          trend\"]:.0f}')\n\n"
+        image: python:3.11
+pipelineInfo:
+  description: MLOps Pipeline for monitoring Angular REST API health
+  name: angular-api-health-pipeline
+root:
+  dag:
+    tasks:
+      load-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-load-data
+        taskInfo:
+          name: load-data
+      make-prediction:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-make-prediction
+        dependentTasks:
+        - train-model
+        inputs:
+          artifacts:
+            model:
+              taskOutputArtifact:
+                outputArtifactKey: model
+                producerTask: train-model
+        taskInfo:
+          name: make-prediction
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - load-data
+        inputs:
+          artifacts:
+            dataset:
+              taskOutputArtifact:
+                outputArtifactKey: dataset
+                producerTask: load-data
+        taskInfo:
+          name: train-model
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.15.0

@@ -1,0 +1,69 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: angular-api-mlops-job
+  labels:
+    app: mlops-pipeline
+    project: devops-pz3
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mlops-runner
+          image: python:3.11
+          command: ["python", "-c"]
+          args:
+            - |
+              import json, numpy as np
+
+              # === Крок 1: Завантаження даних ===
+              print("=" * 50)
+              print("  КРОК 1: Завантаження даних Angular API")
+              print("=" * 50)
+              data = {
+                  "day": [1, 2, 3, 4, 5, 6, 7],
+                  "requests": [12, 18, 15, 22, 30, 28, 35],
+                  "errors": [1, 0, 2, 0, 1, 3, 0],
+                  "response_ms": [120, 115, 130, 110, 145, 200, 105],
+              }
+              print(f"Завантажено {len(data['day'])} записів")
+              print(f"Запити по днях: {data['requests']}")
+
+              # === Крок 2: Навчання моделі ===
+              print("\n" + "=" * 50)
+              print("  КРОК 2: Навчання моделі (обчислення метрик)")
+              print("=" * 50)
+              requests = np.array(data["requests"])
+              errors = np.array(data["errors"])
+              response_ms = np.array(data["response_ms"])
+              avg_req = float(np.mean(requests))
+              avg_err = float(np.mean(errors))
+              avg_resp = float(np.mean(response_ms))
+              trend = float(requests[-1] - requests[0])
+              print(f"avg_requests/day : {avg_req:.2f}")
+              print(f"avg_errors/day   : {avg_err:.2f}")
+              print(f"avg_response_ms  : {avg_resp:.2f}")
+              print(f"load_trend       : +{trend:.0f}")
+
+              # === Крок 3: Прогноз ===
+              print("\n" + "=" * 50)
+              print("  КРОК 3: Прогнозування стану API")
+              print("=" * 50)
+              status = "HEALTHY"
+              if avg_err >= 2.0:
+                  status = "CRITICAL"
+              elif avg_resp >= 150.0 or trend > 15:
+                  status = "WARNING"
+              print(f"  Стан Angular REST API: {status}")
+              if status == "WARNING":
+                  print("  • Швидке зростання навантаження або повільний відгук")
+              elif status == "CRITICAL":
+                  print("  • Критична кількість помилок!")
+              else:
+                  print("  • Всі метрики в нормі")
+              print("=" * 50)
+              print("  MLOps Pipeline завершено успішно!")
+              print("=" * 50)
